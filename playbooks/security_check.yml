@@ -1,5 +1,5 @@
 - name: 보안성 검사 (KISA U-01 ~ U-04, RHEL 8.6 기준)
-  hosts: cluster
+  hosts: all
   gather_facts: yes
   become: yes
   tasks:
