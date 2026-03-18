@@ -1,7 +1,7 @@
 ---
 - name: 보안성 검사 (KISA U-01 ~ U-04, RHEL 8.6 기준)
   hosts: all
-  gather_facts: yes
+  gather_facts: no
   become: yes
   tasks:
 
@@ -77,8 +77,7 @@
       register: passwd_no_shadow
 
     - name: U-04 /etc/shadow 존재 여부 확인
-      ansible.builtin.stat:
-        path: /etc/shadow
+      ansible.builtin.shell: test -f /etc/shadow && echo "True" || echo "False"
       register: shadow_stat
 
     - name: U-04 빈 패스워드 계정 검사
@@ -86,9 +85,10 @@
       register: empty_passwd
 
     # ── 결과 출력 ──────────────────────────────
-    - name: 결과 파일 생성
+    - name: 결과 생성
       ansible.builtin.shell: |
         python3 << 'PYEOF'
+        import datetime
         from wcwidth import wcswidth
 
         def wljust(s, width):
@@ -110,6 +110,8 @@
         def status(ok):
             return 'OK' if ok else 'WARNING'
 
+        now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
         rows = [
             ('[umask]',              '{{ umask_result.stdout | trim }}',         status('{{ umask_result.stdout | trim }}' == '0027'),                        '다른 사용자 읽기 권한 차단'),
             ('[PASS_MAX_DAYS]',      '{{ pass_max_days.stdout | trim }}',        status(check_int_lte('{{ pass_max_days.stdout | trim }}', 90)),               '비밀번호 최대 사용기간 90일 이하'),
@@ -123,7 +125,7 @@
             ('[U-02] dcredit',       '{{ pwq_dcredit.stdout | trim }}',          status(check_int_lte('{{ pwq_dcredit.stdout | trim }}', -1)),                 '숫자 최소 1자 요구'),
             ('[U-02] ocredit',       '{{ pwq_ocredit.stdout | trim }}',          status(check_int_lte('{{ pwq_ocredit.stdout | trim }}', -1)),                 '특수문자 최소 1자 요구'),
             ('[U-03] faillock deny', '{{ faillock_deny.stdout | trim }}',        status(check_int_lte('{{ faillock_deny.stdout | trim }}', 10)),               '로그인 실패 10회 이하 잠금'),
-            ('[U-04] shadow 존재',   '{{ shadow_stat.stat.exists }}',            status('{{ shadow_stat.stat.exists }}' == 'True'),                            'shadow 파일 존재 여부'),
+            ('[U-04] shadow 존재',   '{{ shadow_stat.stdout | trim }}',          status('{{ shadow_stat.stdout | trim }}' == 'True'),                          'shadow 파일 존재 여부'),
             ('[U-04] non-shadow',    '{{ passwd_no_shadow.stdout | trim }}',     status('{{ passwd_no_shadow.stdout | trim }}' in ['', '없음']),               '/etc/passwd 평문 계정 없어야 함'),
             ('[U-04] 빈 패스워드',   '{{ empty_passwd.stdout | trim }}',         status('{{ empty_passwd.stdout | trim }}' == '없음'),                        '빈 패스워드 계정 없어야 함'),
             ('[서비스]',             '{{ running_services.stdout | trim }}',     status(check_int_lte('{{ running_services.stdout | trim }}', 20)),            '불필요한 서비스 최소화'),
@@ -138,13 +140,13 @@
         separator = '+' + '+'.join('-' * (w + 2) for w in col_widths) + '+'
         header    = '| ' + ' | '.join(wljust(headers[i], col_widths[i]) for i in range(4)) + ' |'
 
-        ok_cnt   = sum(1 for r in rows if 'OK' == r[2])
-        warn_cnt = sum(1 for r in rows if 'WARNING' == r[2])
+        ok_cnt   = sum(1 for r in rows if r[2] == 'OK')
+        warn_cnt = sum(1 for r in rows if r[2] == 'WARNING')
 
         lines = []
         lines.append('Host : {{ inventory_hostname }}')
         lines.append('OS   : RHEL 8.6')
-        lines.append('Time : {{ ansible_date_time.date }} {{ ansible_date_time.hour }}:{{ ansible_date_time.minute }}:{{ ansible_date_time.second }}')
+        lines.append(f'Time : {now}')
         lines.append('기준 : KISA 주요정보통신기반시설 기술적 취약점 분석평가 가이드')
         lines.append(f'결과 : OK {ok_cnt}개 | WARNING {warn_cnt}개')
         lines.append('')
