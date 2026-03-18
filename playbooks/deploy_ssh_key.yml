@@ -11,6 +11,6 @@
 
     - name: 공개키 등록
       raw: |
-        echo "{{ lookup('file', '~/.ssh/id_ed25519.pub') }}" >> ~/.ssh/authorized_keys
+        echo "{{ lookup('file', '/root/.ssh/id_ed25519.pub') }}" >> ~/.ssh/authorized_keys
         sort -u ~/.ssh/authorized_keys -o ~/.ssh/authorized_keys
         chmod 600 ~/.ssh/authorized_keys
