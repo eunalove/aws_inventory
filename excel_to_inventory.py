@@ -36,6 +36,7 @@ def excel_to_yaml():
 def git_push():
     try:
         os.chdir(REPO_PATH)
+        subprocess.run(['git', 'pull', 'origin', 'main'], check=True)  # 추가
         subprocess.run(['git', 'add', OUTPUT_FILE], check=True)
         subprocess.run(['git', 'commit', '-m', 'Auto: inventory update'], check=True)
         subprocess.run(['git', 'push', 'origin', 'main'], check=True)
