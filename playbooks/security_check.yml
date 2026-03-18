@@ -90,7 +90,7 @@
       ansible.builtin.shell: |
         python3 << 'PYEOF'
         def wcswidth(s):
-            return sum(2 if ord(c) > 127 else 1 for c in str(s))
+            return sum(3 if ord(c) > 127 else 1 for c in str(s))
 
         def wljust(s, width):
             s = str(s)
