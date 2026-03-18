@@ -11,6 +11,7 @@
 
     - name: 공개키 등록
       raw: |
-        echo "{{ lookup('file', '/root/.ssh/id_ed25519.pub') }}" >> ~/.ssh/authorized_keys
-        sort -u ~/.ssh/authorized_keys -o ~/.ssh/authorized_keys
+        grep -qxF "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGt9DBsCklUy4F/gGVwTARRKqawziQlaQb3tCbjut7TG awx-ansible" ~/.ssh/authorized_keys || \
+        echo "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGt9DBsCklUy4F/gGVwTARRKqawziQlaQb3tCbjut7TG awx-ansible" >> ~/.ssh/authorized_keys
+
         chmod 600 ~/.ssh/authorized_keys
