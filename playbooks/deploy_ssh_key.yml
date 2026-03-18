@@ -1,0 +1,20 @@
+---
+- name: SSH 공개키 배포
+  hosts: all
+  gather_facts: no
+
+  vars:
+    ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+
+  tasks:
+    - name: .ssh 디렉토리 생성
+      file:
+        path: ~/.ssh
+        state: directory
+        mode: '0700'
+
+    - name: 공개키 등록
+      authorized_key:
+        user: "{{ ansible_user }}"
+        key: "{{ lookup('file', '~/.ssh/id_ed25519.pub') }}"
+        state: present
