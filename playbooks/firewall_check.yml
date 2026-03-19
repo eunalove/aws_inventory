@@ -41,7 +41,7 @@
           source_host: "{{ inventory_hostname }}"
           target_ip: "{{ target_ip }}"
           target_port: "{{ target_port }}"
-          port_status: "{{ port_check.stdout }}"
+          port_status: "{{ port_check.stdout | replace('\n', ' ') }}"
           firewalld: "{{ firewalld_rules.stdout | replace('\n', ' | ') }}"
           iptables: "{{ iptables_rules.stdout | replace('\n', ' | ') }}"
 
