@@ -9,52 +9,76 @@
     - name: umask 값 확인
       ansible.builtin.shell: umask
       register: umask_result
+      ignore_errors: yes
+      changed_when: false
 
     - name: PASS_MAX_DAYS 추출
       ansible.builtin.shell: grep "^PASS_MAX_DAYS" /etc/login.defs | awk '{print $2}' | grep . || echo "not set"
       register: pass_max_days
+      ignore_errors: yes
+      changed_when: false
 
     - name: PASS_MIN_DAYS 추출
       ansible.builtin.shell: grep "^PASS_MIN_DAYS" /etc/login.defs | awk '{print $2}' | grep . || echo "not set"
       register: pass_min_days
+      ignore_errors: yes
+      changed_when: false
 
     - name: PASS_MIN_LEN 추출
       ansible.builtin.shell: grep "^PASS_MIN_LEN" /etc/login.defs | awk '{print $2}' | grep . || echo "not set"
       register: pass_min_len
+      ignore_errors: yes
+      changed_when: false
 
     - name: 실행 중인 서비스 수
       ansible.builtin.shell: systemctl list-units --type=service --state=running --no-pager | grep -c "running"
       register: running_services
+      ignore_errors: yes
+      changed_when: false
 
     # ── U-01: root 원격접속 제한 ───────────────
     - name: U-01 SSH PermitRootLogin 확인
       ansible.builtin.shell: grep "^PermitRootLogin" /etc/ssh/sshd_config | awk '{print $2}' | grep . || echo "not set"
       register: ssh_root
+      ignore_errors: yes
+      changed_when: false
 
     - name: U-01 securetty pts 설정 확인
       ansible.builtin.shell: grep -c "^pts" /etc/securetty 2>/dev/null || echo "0"
       register: securetty_pts
+      ignore_errors: yes
+      changed_when: false
 
     # ── U-02: 패스워드 복잡성 ──────────────────
     - name: U-02 minlen 확인
       ansible.builtin.shell: grep "^minlen" /etc/security/pwquality.conf | awk -F'=' '{print $2}' | tr -d ' ' | grep . || echo "not set"
       register: pwq_minlen
+      ignore_errors: yes
+      changed_when: false
 
     - name: U-02 lcredit 확인
       ansible.builtin.shell: grep "^lcredit" /etc/security/pwquality.conf | awk -F'=' '{print $2}' | tr -d ' ' | grep . || echo "not set"
       register: pwq_lcredit
+      ignore_errors: yes
+      changed_when: false
 
     - name: U-02 ucredit 확인
       ansible.builtin.shell: grep "^ucredit" /etc/security/pwquality.conf | awk -F'=' '{print $2}' | tr -d ' ' | grep . || echo "not set"
       register: pwq_ucredit
+      ignore_errors: yes
+      changed_when: false
 
     - name: U-02 dcredit 확인
       ansible.builtin.shell: grep "^dcredit" /etc/security/pwquality.conf | awk -F'=' '{print $2}' | tr -d ' ' | grep . || echo "not set"
       register: pwq_dcredit
+      ignore_errors: yes
+      changed_when: false
 
     - name: U-02 ocredit 확인
       ansible.builtin.shell: grep "^ocredit" /etc/security/pwquality.conf | awk -F'=' '{print $2}' | tr -d ' ' | grep . || echo "not set"
       register: pwq_ocredit
+      ignore_errors: yes
+      changed_when: false
 
     # ── U-03: 계정 잠금 임계값 ─────────────────
     - name: U-03 pam_faillock deny 값 확인
@@ -64,26 +88,55 @@
         || grep -oP "deny=\K[0-9]+" /etc/pam.d/system-auth 2>/dev/null | head -1 | grep .
         || echo "not set"
       register: faillock_deny
+      ignore_errors: yes
+      changed_when: false
 
     - name: U-03 pam_faillock 설정 존재 여부 확인
       ansible.builtin.shell: >
         grep -E "pam_faillock" /etc/pam.d/system-auth /etc/pam.d/password-auth 2>/dev/null
         | grep -v "^#" | head -2 | grep . || echo "not set"
       register: faillock_config
+      ignore_errors: yes
+      changed_when: false
 
     # ── U-04: 패스워드 파일 보호 ───────────────
     - name: U-04 /etc/passwd shadow 사용 여부 확인
       ansible.builtin.shell: awk -F':' '$2 != "x" {print $1}' /etc/passwd | grep . || echo "없음"
       register: passwd_no_shadow
+      ignore_errors: yes
+      changed_when: false
 
     - name: U-04 /etc/shadow 존재 여부 확인
       ansible.builtin.stat:
         path: /etc/shadow
       register: shadow_stat
+      ignore_errors: yes
 
     - name: U-04 빈 패스워드 계정 검사
       ansible.builtin.shell: awk -F':' '($2 == "" || $2 == "!") {print $1}' /etc/shadow 2>/dev/null | grep . || echo "없음"
       register: empty_passwd
+      ignore_errors: yes
+      changed_when: false
+
+    # ── 변수 정규화 (에러 시 기본값 적용) ────────
+    - name: 결과 변수 정규화
+      ansible.builtin.set_fact:
+        v_umask:         "{{ umask_result.stdout         | default('error') | trim }}"
+        v_pass_max_days: "{{ pass_max_days.stdout        | default('error') | trim }}"
+        v_pass_min_days: "{{ pass_min_days.stdout        | default('error') | trim }}"
+        v_pass_min_len:  "{{ pass_min_len.stdout         | default('error') | trim }}"
+        v_running_svc:   "{{ running_services.stdout     | default('error') | trim }}"
+        v_ssh_root:      "{{ ssh_root.stdout             | default('error') | trim }}"
+        v_securetty_pts: "{{ securetty_pts.stdout        | default('error') | trim }}"
+        v_pwq_minlen:    "{{ pwq_minlen.stdout           | default('error') | trim }}"
+        v_pwq_lcredit:   "{{ pwq_lcredit.stdout         | default('error') | trim }}"
+        v_pwq_ucredit:   "{{ pwq_ucredit.stdout         | default('error') | trim }}"
+        v_pwq_dcredit:   "{{ pwq_dcredit.stdout         | default('error') | trim }}"
+        v_pwq_ocredit:   "{{ pwq_ocredit.stdout         | default('error') | trim }}"
+        v_faillock_deny: "{{ faillock_deny.stdout        | default('error') | trim }}"
+        v_shadow_exists: "{{ shadow_stat.stat.exists     | default(false) }}"
+        v_no_shadow:     "{{ passwd_no_shadow.stdout     | default('error') | trim }}"
+        v_empty_passwd:  "{{ empty_passwd.stdout         | default('error') | trim }}"
 
     # ── 결과 출력 ──────────────────────────────
     - name: 결과 생성
@@ -113,22 +166,22 @@
             return 'OK' if ok else 'WARNING'
 
         rows = [
-            ('[umask]',              '{{ umask_result.stdout | trim }}',         status('{{ umask_result.stdout | trim }}' == '0027'),                        '다른 사용자 읽기 권한 차단'),
-            ('[PASS_MAX_DAYS]',      '{{ pass_max_days.stdout | trim }}',        status(check_int_lte('{{ pass_max_days.stdout | trim }}', 90)),               '비밀번호 최대 사용기간 90일 이하'),
-            ('[PASS_MIN_DAYS]',      '{{ pass_min_days.stdout | trim }}',        status(check_int_gte('{{ pass_min_days.stdout | trim }}', 1)),                '비밀번호 변경 후 최소 1일 유지'),
-            ('[PASS_MIN_LEN]',       '{{ pass_min_len.stdout | trim }}',         status(check_int_gte('{{ pass_min_len.stdout | trim }}', 8)),                 '비밀번호 최소 8자리 이상'),
-            ('[U-01] SSH',           '{{ ssh_root.stdout | trim }}',             status('{{ ssh_root.stdout | trim }}' == 'no'),                               'root SSH 직접 로그인 차단'),
-            ('[U-01] Telnet pts',    '{{ securetty_pts.stdout | trim }}',        status('{{ securetty_pts.stdout | trim }}' == '0'),                           '/etc/securetty pts 항목 없어야 함'),
-            ('[U-02] minlen',        '{{ pwq_minlen.stdout | trim }}',           status(check_int_gte('{{ pwq_minlen.stdout | trim }}', 8)),                   '비밀번호 최소 길이 8자 이상'),
-            ('[U-02] lcredit',       '{{ pwq_lcredit.stdout | trim }}',          status(check_int_lte('{{ pwq_lcredit.stdout | trim }}', -1)),                 '소문자 최소 1자 요구'),
-            ('[U-02] ucredit',       '{{ pwq_ucredit.stdout | trim }}',          status(check_int_lte('{{ pwq_ucredit.stdout | trim }}', -1)),                 '대문자 최소 1자 요구'),
-            ('[U-02] dcredit',       '{{ pwq_dcredit.stdout | trim }}',          status(check_int_lte('{{ pwq_dcredit.stdout | trim }}', -1)),                 '숫자 최소 1자 요구'),
-            ('[U-02] ocredit',       '{{ pwq_ocredit.stdout | trim }}',          status(check_int_lte('{{ pwq_ocredit.stdout | trim }}', -1)),                 '특수문자 최소 1자 요구'),
-            ('[U-03] faillock deny', '{{ faillock_deny.stdout | trim }}',        status(check_int_lte('{{ faillock_deny.stdout | trim }}', 10)),               '로그인 실패 10회 이하 잠금'),
-            ('[U-04] shadow 존재',   '{{ shadow_stat.stat.exists }}',            status('{{ shadow_stat.stat.exists }}' == 'True'),                            'shadow 파일 존재 여부'),
-            ('[U-04] non-shadow',    '{{ passwd_no_shadow.stdout | trim }}',     status('{{ passwd_no_shadow.stdout | trim }}' in ['', '없음']),               '/etc/passwd 평문 계정 없어야 함'),
-            ('[U-04] 빈 패스워드',   '{{ empty_passwd.stdout | trim }}',         status('{{ empty_passwd.stdout | trim }}' == '없음'),                        '빈 패스워드 계정 없어야 함'),
-            ('[서비스]',             '{{ running_services.stdout | trim }}',     status(check_int_lte('{{ running_services.stdout | trim }}', 20)),            '불필요한 서비스 최소화'),
+            ('[umask]',              '{{ v_umask }}',         status('{{ v_umask }}' == '0027'),                        '다른 사용자 읽기 권한 차단'),
+            ('[PASS_MAX_DAYS]',      '{{ v_pass_max_days }}', status(check_int_lte('{{ v_pass_max_days }}', 90)),        '비밀번호 최대 사용기간 90일 이하'),
+            ('[PASS_MIN_DAYS]',      '{{ v_pass_min_days }}', status(check_int_gte('{{ v_pass_min_days }}', 1)),         '비밀번호 변경 후 최소 1일 유지'),
+            ('[PASS_MIN_LEN]',       '{{ v_pass_min_len }}',  status(check_int_gte('{{ v_pass_min_len }}', 8)),          '비밀번호 최소 8자리 이상'),
+            ('[U-01] SSH',           '{{ v_ssh_root }}',      status('{{ v_ssh_root }}' == 'no'),                        'root SSH 직접 로그인 차단'),
+            ('[U-01] Telnet pts',    '{{ v_securetty_pts }}', status('{{ v_securetty_pts }}' == '0'),                    '/etc/securetty pts 항목 없어야 함'),
+            ('[U-02] minlen',        '{{ v_pwq_minlen }}',    status(check_int_gte('{{ v_pwq_minlen }}', 8)),            '비밀번호 최소 길이 8자 이상'),
+            ('[U-02] lcredit',       '{{ v_pwq_lcredit }}',   status(check_int_lte('{{ v_pwq_lcredit }}', -1)),          '소문자 최소 1자 요구'),
+            ('[U-02] ucredit',       '{{ v_pwq_ucredit }}',   status(check_int_lte('{{ v_pwq_ucredit }}', -1)),          '대문자 최소 1자 요구'),
+            ('[U-02] dcredit',       '{{ v_pwq_dcredit }}',   status(check_int_lte('{{ v_pwq_dcredit }}', -1)),          '숫자 최소 1자 요구'),
+            ('[U-02] ocredit',       '{{ v_pwq_ocredit }}',   status(check_int_lte('{{ v_pwq_ocredit }}', -1)),          '특수문자 최소 1자 요구'),
+            ('[U-03] faillock deny', '{{ v_faillock_deny }}', status(check_int_lte('{{ v_faillock_deny }}', 10)),        '로그인 실패 10회 이하 잠금'),
+            ('[U-04] shadow 존재',   '{{ v_shadow_exists }}', status('{{ v_shadow_exists }}' == 'True'),                 'shadow 파일 존재 여부'),
+            ('[U-04] non-shadow',    '{{ v_no_shadow }}',     status('{{ v_no_shadow }}' in ['', '없음']),               '/etc/passwd 평문 계정 없어야 함'),
+            ('[U-04] 빈 패스워드',   '{{ v_empty_passwd }}',  status('{{ v_empty_passwd }}' == '없음'),                  '빈 패스워드 계정 없어야 함'),
+            ('[서비스]',             '{{ v_running_svc }}',   status(check_int_lte('{{ v_running_svc }}', 20)),          '불필요한 서비스 최소화'),
         ]
 
         headers = ['점검 항목', '현재 값', '상태', '설명']
@@ -160,7 +213,9 @@
         print('\n'.join(lines))
         PYEOF
       register: security_report
+      ignore_errors: yes
+      changed_when: false
 
     - name: 보안 검사 결과 AWX 로그 출력
       ansible.builtin.debug:
-        msg: "{{ security_report.stdout_lines }}"
+        msg: "{{ security_report.stdout_lines | default(['결과 생성 중 오류가 발생했습니다.']) }}"
