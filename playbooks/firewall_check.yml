@@ -1,3 +1,4 @@
+---
 - name: 검사 대상 동적 등록
   hosts: localhost
   gather_facts: false
@@ -41,8 +42,8 @@
           target_ip: "{{ target_ip }}"
           target_port: "{{ target_port }}"
           port_status: "{{ port_check.stdout }}"
-          firewalld: "{{ firewalld_rules.stdout }}"
-          iptables: "{{ iptables_rules.stdout }}"
+          firewalld: "{{ firewalld_rules.stdout | replace('\n', ' | ') }}"
+          iptables: "{{ iptables_rules.stdout | replace('\n', ' | ') }}"
 
 - name: 전체 결과 파일 생성
   hosts: localhost
@@ -70,8 +71,8 @@
             'target_ip'  : '{{ hostvars[host].fw_result.target_ip }}',
             'target_port': '{{ hostvars[host].fw_result.target_port }}',
             'port_status': '{{ hostvars[host].fw_result.port_status }}',
-            'firewalld'  : '{{ hostvars[host].fw_result.firewalld | replace(chr(10), " | ") }}',
-            'iptables'   : '{{ hostvars[host].fw_result.iptables  | replace(chr(10), " | ") }}',
+            'firewalld'  : '{{ hostvars[host].fw_result.firewalld }}',
+            'iptables'   : '{{ hostvars[host].fw_result.iptables }}',
           },
         {% endfor %}
         ]
