@@ -1,0 +1,112 @@
+- name: 서버 사양 체크 및 권장값 리포트
+  hosts: cluster
+  gather_facts: yes
+  become: yes
+  tasks:
+
+    - name: tuned 서비스 상태 확인
+      shell: systemctl is-active tuned
+      register: tuned_status
+      ignore_errors: yes
+
+    - name: tuned 서비스 활성화
+      systemd:
+        name: tuned
+        state: started
+        enabled: yes
+      when: tuned_status.stdout != "active"
+
+    - name: 현재 tuned 프로파일 확인
+      shell: tuned-adm active | awk '{print $NF}'
+      register: tuned_profile
+
+    - name: virtual-guest 프로파일 적용
+      shell: tuned-adm profile virtual-guest
+      when: tuned_profile.stdout != "virtual-guest"
+
+    - name: sysctl 현재값 수집
+      shell: sysctl -n {{ item }}
+      register: sysctl_values
+      loop:
+        - vm.dirty_ratio
+        - vm.dirty_background_ratio
+        - vm.swappiness
+        - kernel.pid_max
+
+    - name: 결과 생성
+      shell: |
+        python3 << 'PYEOF'
+        def wcswidth(s):
+            return sum(2 if ord(c) > 127 else 1 for c in str(s))
+
+        def wljust(s, width):
+            s = str(s)
+            w = wcswidth(s)
+            return s + ' ' * (width - w) if w < width else s
+
+        def check_gte(current, recommended):
+            try: return int(current) >= int(recommended)
+            except: return False
+
+        def check_lte(current, recommended):
+            try: return int(current) <= int(recommended)
+            except: return False
+
+        cpu_cores  = {{ ansible_processor_vcpus }}
+        pid_max_recommended = 1024 * cpu_cores
+
+        dirty_ratio        = '{{ sysctl_values.results[0].stdout | trim }}'
+        dirty_bg_ratio     = '{{ sysctl_values.results[1].stdout | trim }}'
+        swappiness         = '{{ sysctl_values.results[2].stdout | trim }}'
+        pid_max            = '{{ sysctl_values.results[3].stdout | trim }}'
+        tuned_profile      = '{{ tuned_profile.stdout | trim }}'
+        tuned_was_active   = '{{ tuned_status.stdout | trim }}'
+
+        rows = [
+            ('[tuned 서비스]',       tuned_was_active,     'OK' if tuned_was_active == 'active' else 'WARNING',  'tuned 서비스 활성화 여부'),
+            ('[tuned 프로파일]',     tuned_profile,        'OK' if tuned_profile == 'virtual-guest' else 'WARNING', 'virtual-guest 프로파일 권장'),
+            ('[vm.dirty_ratio]',     dirty_ratio,          'OK' if check_lte(dirty_ratio, 30) else 'WARNING',    'virtual-guest 권장값: 30'),
+            ('[vm.dirty_bg_ratio]',  dirty_bg_ratio,       'OK' if check_lte(dirty_bg_ratio, 10) else 'WARNING', 'throughput-performance 권장값: 10'),
+            ('[vm.swappiness]',      swappiness,           'OK' if check_lte(swappiness, 30) else 'WARNING',     'virtual-guest 권장값: 30'),
+            ('[kernel.pid_max]',     pid_max,              'OK' if check_gte(pid_max, pid_max_recommended) else 'WARNING', f'Red Hat 권장: 1024 * {cpu_cores}코어 = {pid_max_recommended}'),
+        ]
+
+        headers = ['점검 항목', '현재 값', '상태', '설명']
+        col_widths = [
+            max(wcswidth(headers[i]), max(wcswidth(str(row[i])) for row in rows))
+            for i in range(4)
+        ]
+
+        separator = '+' + '+'.join('-' * (w + 2) for w in col_widths) + '+'
+        header    = '| ' + ' | '.join(wljust(headers[i], col_widths[i]) for i in range(4)) + ' |'
+
+        ok_cnt   = sum(1 for r in rows if r[2] == 'OK')
+        warn_cnt = sum(1 for r in rows if r[2] == 'WARNING')
+        bar_width = sum(col_widths) + len(col_widths) * 3 + 1
+
+        lines = []
+        lines.append('=' * bar_width)
+        lines.append('서버 사양 및 tuned 점검 결과')
+        lines.append('=' * bar_width)
+        lines.append('Host : {{ inventory_hostname }}')
+        lines.append('OS   : {{ ansible_distribution }} {{ ansible_distribution_version }}')
+        lines.append('CPU  : {{ ansible_processor_vcpus }}코어')
+        lines.append('RAM  : {{ (ansible_memtotal_mb / 1024) | round(1) }}GB')
+        lines.append('Time : {{ ansible_date_time.date }} {{ ansible_date_time.hour }}:{{ ansible_date_time.minute }}:{{ ansible_date_time.second }}')
+        lines.append('기준 : Red Hat tuned virtual-guest 프로파일')
+        lines.append(f'결과 : OK {ok_cnt}개 | WARNING {warn_cnt}개')
+        lines.append('')
+        lines.append(separator)
+        lines.append(header)
+        lines.append(separator)
+        for row in rows:
+            lines.append('| ' + ' | '.join(wljust(str(row[i]), col_widths[i]) for i in range(4)) + ' |')
+        lines.append(separator)
+
+        print('\n'.join(lines))
+        PYEOF
+      register: sysctl_report
+
+    - name: 결과 출력
+      ansible.builtin.debug:
+        msg: "{{ sysctl_report.stdout_lines }}"
