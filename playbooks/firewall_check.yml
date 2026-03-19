@@ -17,6 +17,11 @@
         target_port: "{{ item.target_port }}"
       loop: "{{ firewall_rules }}"
 
+- name: wcwidth 설치 확인
+      shell: python3 -c "import wcwidth; print(wcwidth.__file__)"
+      delegate_to: localhost
+      become: no
+
 - name: 방화벽 체크
   hosts: fw_check_group
   gather_facts: yes
