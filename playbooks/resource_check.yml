@@ -1,5 +1,5 @@
 - name: 서버 사양 체크 및 권장값 리포트
-  hosts: cluster
+  hosts: all
   gather_facts: yes
   become: yes
   tasks:
