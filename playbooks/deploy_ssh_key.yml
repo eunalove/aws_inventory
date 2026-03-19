@@ -11,7 +11,9 @@
 
     - name: 공개키 등록
       raw: |
-        grep -qxF "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGt9DBsCklUy4F/gGVwTARRKqawziQlaQb3tCbjut7TG awx-ansible" ~/.ssh/authorized_keys || \
-        echo "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGt9DBsCklUy4F/gGVwTARRKqawziQlaQb3tCbjut7TG awx-ansible" >> ~/.ssh/authorized_keys
+        grep -qxF "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEppgd2A1CqJ5sdtdQQLYBCIEXwOnZhpI7VnRb2kJCPS admin@localhost.localdomain
+" ~/.ssh/authorized_keys || \
+        echo "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEppgd2A1CqJ5sdtdQQLYBCIEXwOnZhpI7VnRb2kJCPS admin@localhost.localdomain
+" >> ~/.ssh/authorized_keys
 
         chmod 600 ~/.ssh/authorized_keys
