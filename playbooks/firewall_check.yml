@@ -39,17 +39,11 @@
           firewalld: "{{ firewalld_rules.stdout | replace('\n', ' | ') }}"
           iptables: "{{ iptables_rules.stdout | replace('\n', ' | ') }}"
 
-- name: 전체 결과 파일 생성
+- name: 전체 결과 출력
   hosts: localhost
   gather_facts: true
   tasks:
-    - name: 결과 디렉토리 생성
-      file:
-        path: /home/admin/homework3/result/firewall
-        state: directory
-        mode: '0755'
-
-    - name: 전체 결과 한 파일에 저장
+    - name: 결과 생성
       ansible.builtin.shell: |
         python3 << 'PYEOF'
         def wcswidth(s):
@@ -124,7 +118,10 @@
                 lines.append('  ' + line.strip())
             lines.append('')
 
-        with open('/home/admin/homework3/result/firewall/firewall_report_{{ ansible_date_time.date }}_{{ ansible_date_time.hour }}{{ ansible_date_time.minute }}{{ ansible_date_time.second }}.txt', 'w', encoding='utf-8') as f:
-            f.write('\n'.join(lines))
-        print('결과 파일 저장 완료')
+        print('\n'.join(lines))
         PYEOF
+      register: firewall_report
+
+    - name: 방화벽 검사 결과 출력
+      ansible.builtin.debug:
+        msg: "{{ firewall_report.stdout_lines }}"
