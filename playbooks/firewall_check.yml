@@ -5,11 +5,16 @@
   tasks:
     - name: source_host를 동적 그룹에 추가
       add_host:
-        name: "{{ item.source_host }}"
+        name: "{{ item.source_host }}_{{ idx }}"
         groups: fw_check_group
+        ansible_host: "{{ hostvars[item.source_host].ansible_host }}"
+        ansible_user: "{{ hostvars[item.source_host].ansible_user }}"
+        real_host: "{{ item.source_host }}"
         target_ip: "{{ item.target_ip }}"
         target_port: "{{ item.target_port }}"
       loop: "{{ firewall_rules }}"
+      loop_control:
+        index_var: idx
 
 - name: 방화벽 체크
   hosts: fw_check_group
@@ -21,23 +26,13 @@
       register: port_check
       ignore_errors: yes
 
-    - name: firewalld 규칙 확인
-      shell: firewall-cmd --list-all 2>&1 || echo "firewalld not running"
-      register: firewalld_rules
-
-    - name: iptables 규칙 확인
-      shell: iptables -L -n | grep {{ target_port }} || echo "no iptables rule for {{ target_port }}"
-      register: iptables_rules
-
     - name: 결과를 hostvars에 저장
       set_fact:
         fw_result:
-          source_host: "{{ inventory_hostname }}"
+          source_host: "{{ real_host }}"
           target_ip: "{{ target_ip }}"
           target_port: "{{ target_port }}"
           port_status: "{{ port_check.stdout | replace('\n', ' ') }}"
-          firewalld: "{{ firewalld_rules.stdout | replace('\n', ' | ') }}"
-          iptables: "{{ iptables_rules.stdout | replace('\n', ' | ') }}"
 
 - name: 전체 결과 출력
   hosts: localhost
@@ -57,12 +52,10 @@
         results = [
         {% for host in groups['fw_check_group'] %}
           {
-            'source_host': '{{ host }}',
+            'source_host': '{{ hostvars[host].fw_result.source_host }}',
             'target_ip'  : '{{ hostvars[host].fw_result.target_ip }}',
             'target_port': '{{ hostvars[host].fw_result.target_port }}',
             'port_status': '{{ hostvars[host].fw_result.port_status }}',
-            'firewalld'  : '{{ hostvars[host].fw_result.firewalld }}',
-            'iptables'   : '{{ hostvars[host].fw_result.iptables }}',
           },
         {% endfor %}
         ]
@@ -104,19 +97,6 @@
         for row in rows:
             lines.append('| ' + ' | '.join(wljust(str(row[i]), col_widths[i]) for i in range(4)) + ' |')
         lines.append(separator)
-        lines.append('')
-
-        for r in results:
-            is_open = 'OPEN' in r['port_status']
-            lines.append('-' * bar_width)
-            lines.append(f"[{r['source_host']} -> {r['target_ip']}:{r['target_port']}] {'OPEN' if is_open else 'BLOCKED'}")
-            lines.append('[firewalld 규칙]')
-            for line in r['firewalld'].split(' | '):
-                lines.append('  ' + line.strip())
-            lines.append('[iptables 규칙]')
-            for line in r['iptables'].split(' | '):
-                lines.append('  ' + line.strip())
-            lines.append('')
 
         print('\n'.join(lines))
         PYEOF
