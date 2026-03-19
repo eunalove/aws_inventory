@@ -15,6 +15,7 @@
       loop: "{{ firewall_rules }}"
       loop_control:
         index_var: idx
+      ignore_errors: yes
 
 - name: 방화벽 체크
   hosts: fw_check_group
@@ -25,14 +26,16 @@
       shell: nc -zv {{ target_ip }} {{ target_port }} 2>&1 && echo "OPEN" || echo "CLOSED"
       register: port_check
       ignore_errors: yes
+      changed_when: false
 
     - name: 결과를 hostvars에 저장
       set_fact:
         fw_result:
-          source_host: "{{ real_host }}"
-          target_ip: "{{ target_ip }}"
-          target_port: "{{ target_port }}"
-          port_status: "{{ port_check.stdout | replace('\n', ' ') }}"
+          source_host: "{{ real_host | default('unknown') }}"
+          target_ip: "{{ target_ip | default('unknown') }}"
+          target_port: "{{ target_port | default('unknown') }}"
+          port_status: "{{ port_check.stdout | default('ERROR') | replace('\n', ' ') }}"
+      ignore_errors: yes
 
 - name: 전체 결과 출력
   hosts: localhost
@@ -43,65 +46,72 @@
         python3 << 'PYEOF'
         def wcswidth(s):
             return sum(2 if ord(c) > 127 else 1 for c in str(s))
-
         def wljust(s, width):
             s = str(s)
             w = wcswidth(s)
             return s + ' ' * (width - w) if w < width else s
 
         results = [
-        {% for host in groups['fw_check_group'] %}
+        {% for host in groups.get('fw_check_group', []) %}
           {
-            'source_host': '{{ hostvars[host].fw_result.source_host }}',
-            'target_ip'  : '{{ hostvars[host].fw_result.target_ip }}',
-            'target_port': '{{ hostvars[host].fw_result.target_port }}',
-            'port_status': '{{ hostvars[host].fw_result.port_status }}',
+            'source_host': '{{ hostvars[host].fw_result.source_host | default("unknown") }}',
+            'target_ip'  : '{{ hostvars[host].fw_result.target_ip   | default("unknown") }}',
+            'target_port': '{{ hostvars[host].fw_result.target_port | default("unknown") }}',
+            'port_status': '{{ hostvars[host].fw_result.port_status | default("ERROR")   }}',
           },
         {% endfor %}
         ]
 
-        rows = []
-        for r in results:
-            is_open = 'OPEN' in r['port_status']
-            rows.append((
-                r['source_host'],
-                r['target_ip'],
-                str(r['target_port']),
-                'OPEN' if is_open else 'BLOCKED'
-            ))
+        if not results:
+            print("점검 대상이 없거나 모든 호스트에서 오류가 발생했습니다.")
+        else:
+            rows = []
+            for r in results:
+                is_open = 'OPEN' in r['port_status']
+                status  = 'ERROR' if 'ERROR' in r['port_status'] else ('OPEN' if is_open else 'BLOCKED')
+                rows.append((
+                    r['source_host'],
+                    r['target_ip'],
+                    str(r['target_port']),
+                    status
+                ))
 
-        headers = ['출발지', '목적지', '포트', '결과']
-        col_widths = [
-            max(wcswidth(headers[i]), max(wcswidth(str(row[i])) for row in rows))
-            for i in range(4)
-        ]
+            headers = ['출발지', '목적지', '포트', '결과']
+            col_widths = [
+                max(wcswidth(headers[i]), max(wcswidth(str(row[i])) for row in rows))
+                for i in range(4)
+            ]
 
-        separator = '+' + '+'.join('-' * (w + 2) for w in col_widths) + '+'
-        header    = '| ' + ' | '.join(wljust(headers[i], col_widths[i]) for i in range(4)) + ' |'
+            separator = '+' + '+'.join('-' * (w + 2) for w in col_widths) + '+'
+            header    = '| ' + ' | '.join(wljust(headers[i], col_widths[i]) for i in range(4)) + ' |'
 
-        open_cnt  = sum(1 for r in rows if r[3] == 'OPEN')
-        block_cnt = sum(1 for r in rows if r[3] == 'BLOCKED')
-        total     = len(rows)
-        bar_width = sum(col_widths) + len(col_widths) * 3 + 1
+            open_cnt  = sum(1 for r in rows if r[3] == 'OPEN')
+            block_cnt = sum(1 for r in rows if r[3] == 'BLOCKED')
+            error_cnt = sum(1 for r in rows if r[3] == 'ERROR')
+            total     = len(rows)
 
-        lines = []
-        lines.append('=' * bar_width)
-        lines.append('방화벽 점검 결과 보고서')
-        lines.append('=' * bar_width)
-        lines.append('Time : {{ ansible_date_time.date }} {{ ansible_date_time.hour }}:{{ ansible_date_time.minute }}:{{ ansible_date_time.second }}')
-        lines.append(f'결과 : OPEN {open_cnt}개 | BLOCKED {block_cnt}개 | 총 {total}개')
-        lines.append('')
-        lines.append(separator)
-        lines.append(header)
-        lines.append(separator)
-        for row in rows:
-            lines.append('| ' + ' | '.join(wljust(str(row[i]), col_widths[i]) for i in range(4)) + ' |')
-        lines.append(separator)
+            bar_width = sum(col_widths) + len(col_widths) * 3 + 1
 
-        print('\n'.join(lines))
+            lines = []
+            lines.append('=' * bar_width)
+            lines.append('방화벽 점검 결과 보고서')
+            lines.append('=' * bar_width)
+            lines.append('Time : {{ ansible_date_time.date }} {{ ansible_date_time.hour }}:{{ ansible_date_time.minute }}:{{ ansible_date_time.second }}')
+            lines.append(f'결과 : OPEN {open_cnt}개 | BLOCKED {block_cnt}개 | ERROR {error_cnt}개 | 총 {total}개')
+            lines.append('')
+            lines.append(separator)
+            lines.append(header)
+            lines.append(separator)
+            for row in rows:
+                lines.append('| ' + ' | '.join(wljust(str(row[i]), col_widths[i]) for i in range(4)) + ' |')
+            lines.append(separator)
+
+            print('\n'.join(lines))
         PYEOF
       register: firewall_report
+      ignore_errors: yes
+      changed_when: false
 
     - name: 방화벽 검사 결과 출력
       ansible.builtin.debug:
-        msg: "{{ firewall_report.stdout_lines }}"
+        msg: "{{ firewall_report.stdout_lines | default(['결과 생성 중 오류가 발생했습니다.']) }}"
