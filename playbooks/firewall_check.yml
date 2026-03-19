@@ -1,0 +1,113 @@
+---
+- name: 검사 대상 동적 등록
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: wcwidth 설치
+      pip:
+        name: wcwidth
+      delegate_to: localhost
+      become: no
+
+    - name: source_host를 동적 그룹에 추가
+      add_host:
+        name: "{{ item.source_host }}"
+        groups: fw_check_group
+        target_ip: "{{ item.target_ip }}"
+        target_port: "{{ item.target_port }}"
+      loop: "{{ firewall_rules }}"
+
+- name: 방화벽 체크
+  hosts: fw_check_group
+  gather_facts: yes
+  become: yes
+  tasks:
+    - name: 포트 열려있는지 확인 (nc)
+      shell: nc -zv {{ target_ip }} {{ target_port }} 2>&1 && echo "OPEN" || echo "CLOSED"
+      register: port_check
+      ignore_errors: yes
+
+    - name: firewalld 규칙 확인
+      shell: firewall-cmd --list-all 2>&1 || echo "firewalld not running"
+      register: firewalld_rules
+
+    - name: iptables 규칙 확인
+      shell: iptables -L -n | grep {{ target_port }} || echo "no iptables rule for {{ target_port }}"
+      register: iptables_rules
+
+    - name: 결과 디렉토리 생성
+      file:
+        path: /home/admin/homework3/result/firewall
+        state: directory
+        mode: '0755'
+      delegate_to: localhost
+      become: no
+
+    - name: 결과 파일 생성
+      ansible.builtin.shell: |
+        python3 -c "
+        from wcwidth import wcswidth
+
+        def wljust(s, width):
+            w = wcswidth(s)
+            return s + ' ' * (width - w) if w < width else s
+
+        def status(ok):
+            return '✅ OPEN' if ok else '❌ BLOCKED'
+
+        port_status_raw = '{{ port_check.stdout }}'
+        is_open = 'OPEN' in port_status_raw
+
+        firewalld_raw = '''{{ firewalld_rules.stdout | replace('\n', ' | ') | replace(\"'\", \"'\") }}'''
+        iptables_raw  = '''{{ iptables_rules.stdout  | replace('\n', ' | ') | replace(\"'\", \"'\") }}'''
+
+        rows = [
+            ('[포트 연결]',    '{{ target_ip }}:{{ target_port }}', status(is_open),       'nc 연결 테스트 결과'),
+            ('[firewalld]',   firewalld_raw[:60] + '...' if len(firewalld_raw) > 60 else firewalld_raw,
+                              '📋 INFO', 'firewalld 현재 규칙'),
+            ('[iptables]',    iptables_raw[:60] + '...' if len(iptables_raw) > 60 else iptables_raw,
+                              '📋 INFO', 'iptables 포트 관련 규칙'),
+        ]
+
+        headers = ['점검 항목', '현재 값', '상태', '설명']
+        col_widths = [
+            max(wcswidth(headers[i]), max(wcswidth(str(row[i])) for row in rows))
+            for i in range(4)
+        ]
+
+        separator = '+' + '+'.join('-' * (w + 2) for w in col_widths) + '+'
+        header    = '| ' + ' | '.join(wljust(headers[i], col_widths[i]) for i in range(4)) + ' |'
+
+        open_cnt   = sum(1 for r in rows if '✅' in r[2])
+        block_cnt  = sum(1 for r in rows if '❌' in r[2])
+
+        lines = []
+        lines.append('=' * (sum(col_widths) + len(col_widths) * 3 + 1))
+        lines.append('방화벽 점검 결과 보고서')
+        lines.append('=' * (sum(col_widths) + len(col_widths) * 3 + 1))
+        lines.append('Host   : {{ inventory_hostname }}')
+        lines.append('Target : {{ target_ip }}:{{ target_port }}')
+        lines.append('Time   : {{ ansible_date_time.date }} {{ ansible_date_time.hour }}:{{ ansible_date_time.minute }}:{{ ansible_date_time.second }}')
+        lines.append('결과   : ' + ('✅ OPEN (통신 가능)' if is_open else '❌ BLOCKED (통신 차단)'))
+        lines.append('')
+        lines.append(separator)
+        lines.append(header)
+        lines.append(separator)
+        for row in rows:
+            lines.append('| ' + ' | '.join(wljust(str(row[i]), col_widths[i]) for i in range(4)) + ' |')
+        lines.append(separator)
+        lines.append('')
+        lines.append('[firewalld 전체 규칙]')
+        for line in '''{{ firewalld_rules.stdout | replace(\"'\", \"'\") }}'''.split(' | '):
+            lines.append('  ' + line.strip())
+        lines.append('')
+        lines.append('[iptables 관련 규칙]')
+        for line in '''{{ iptables_rules.stdout | replace(\"'\", \"'\") }}'''.split(' | '):
+            lines.append('  ' + line.strip())
+
+        with open('/home/admin/homework3/result/firewall/firewall_report_{{ inventory_hostname }}_{{ ansible_date_time.date }}_{{ ansible_date_time.hour }}{{ ansible_date_time.minute }}{{ ansible_date_time.second }}.txt', 'w', encoding='utf-8') as f:
+            f.write('\n'.join(lines))
+        print('파일 저장 완료')
+        "
+      delegate_to: localhost
+      become: no
